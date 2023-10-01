@@ -428,56 +428,88 @@ class TestXcvrdScript(object):
         task = SfpStateUpdateTask(DEFAULT_NAMESPACE, port_mapping, stop_event, sfp_error_event)
         task._init_port_sfp_status_tbl(port_mapping, xcvr_table_helper, stop_event)
 
-    # def test_get_media_settings_key(self):
-    #     xcvr_info_dict = {
-    #         0: {
-    #             'manufacturer': 'Molex',
-    #             'model': '1064141421',
-    #             'cable_type': 'Length Cable Assembly(m)',
-    #             'cable_length': '255',
-    #             'specification_compliance': "{'10/40G Ethernet Compliance Code': '10GBase-SR'}",
-    #             'type_abbrv_name': 'QSFP+'
-    #         }
-    #     }
+    @patch('xcvrd.xcvrd.platform_chassis')
+    @patch('xcvrd.xcvrd.is_cmis_api', MagicMock(return_value=True))
+    def test_get_media_settings_key(self, mock_chassis):
+        mock_sfp = MagicMock()
+        mock_chassis.get_sfp = MagicMock(return_value=mock_sfp)
+        mock_api = MagicMock()
+        mock_sfp.get_xcvr_api = MagicMock(return_value=mock_api)
 
-    #     # Test a good 'specification_compliance' value
-    #     result = get_media_settings_key(0, xcvr_info_dict)
-    #     assert result == ['MOLEX-1064141421', 'QSFP+-10GBase-SR-255M']
+        mock_app_adv_value ={
+        1: {'host_electrical_interface_id': '400G CR8', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 8, 'host_lane_count': 8, 'host_lane_assignment_options': 1},
+        2: {'host_electrical_interface_id': '200GBASE-CR4 (Clause 136)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 4, 'host_lane_count': 4, 'host_lane_assignment_options': 17}, 
+        3: {'host_electrical_interface_id': '100GBASE-CR2 (Clause 136)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 2, 'host_lane_count': 2, 'host_lane_assignment_options': 85}, 
+        4: {'host_electrical_interface_id': '100GBASE-CR4 (Clause 92)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 4, 'host_lane_count': 4, 'host_lane_assignment_options': 17}, 
+        5: {'host_electrical_interface_id': '50GBASE-CR (Clause 126)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 1, 'host_lane_count': 1, 'host_lane_assignment_options': 255}, 
+        6: {'host_electrical_interface_id': '40GBASE-CR4 (Clause 85)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 4, 'host_lane_count': 4, 'host_lane_assignment_options': 17}, 
+        7: {'host_electrical_interface_id': '25GBASE-CR CA-N (Clause 110)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 1, 'host_lane_count': 1, 'host_lane_assignment_options': 255}, 
+        8: {'host_electrical_interface_id': '1000BASE -CX(Clause 39)', 'module_media_interface_id': 'Copper cable', 'media_lane_count': 1, 'host_lane_count': 1, 'host_lane_assignment_options': 255}
+        }
 
-    #     # Test a bad 'specification_compliance' value
-    #     xcvr_info_dict[0]['specification_compliance'] = 'N/A'
-    #     result = get_media_settings_key(0, xcvr_info_dict)
-    #     assert result == ['MOLEX-1064141421', 'QSFP+-*']
-    #     # TODO: Ensure that error message was logged
+        mock_api.get_application_advertisement = MagicMock(return_value=mock_app_adv_value)
 
-    # @patch('xcvrd.xcvrd.g_dict', media_settings_dict)
-    # @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
-    # def test_notify_media_setting(self):
-    #     self._check_notify_media_setting(1)
+        xcvr_info_dict = {
+            0: {
+                'manufacturer': 'Molex',
+                'model': '1064141421',
+                'cable_type': 'Length Cable Assembly(m)',
+                'cable_length': '255',
+                'specification_compliance': "{'10/40G Ethernet Compliance Code': '10GBase-SR'}",
+                'type_abbrv_name': 'QSFP+'
+            }
+        }
 
-    # @patch('xcvrd.xcvrd.g_dict', media_settings_with_comma_dict)
-    # @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
-    # def test_notify_media_setting_with_comma(self):
-    #     self._check_notify_media_setting(1)
-    #     self._check_notify_media_setting(6)
+        # Test a good 'specification_compliance' value
+        result = get_media_settings_key(0, xcvr_info_dict, 100000, 2)
+        assert result == ['MOLEX-1064141421', 'QSFP+-10GBase-SR-255M', 'speed:100GBASE-CR2']
 
-    # def _check_notify_media_setting(self, index):
-    #     logical_port_name = 'Ethernet0'
-    #     xcvr_info_dict = {
-    #         index: {
-    #             'manufacturer': 'Molex',
-    #             'model': '1064141421',
-    #             'cable_type': 'Length Cable Assembly(m)',
-    #             'cable_length': '255',
-    #             'specification_compliance': "{'10/40G Ethernet Compliance Code': '10GBase-SR'}",
-    #             'type_abbrv_name': 'QSFP+'
-    #         }
-    #     }
-    #     app_port_tbl = Table("APPL_DB", 'PORT_TABLE')
-    #     port_mapping = PortMapping()
-    #     port_change_event = PortChangeEvent('Ethernet0', index, 0, PortChangeEvent.PORT_ADD)
-    #     port_mapping.handle_port_change_event(port_change_event)
-    #     notify_media_setting(logical_port_name, xcvr_info_dict, app_port_tbl, port_mapping)
+        # Test a bad 'specification_compliance' value
+        xcvr_info_dict[0]['specification_compliance'] = 'N/A'
+        result = get_media_settings_key(0, xcvr_info_dict, 100000, 2)
+        assert result == ['MOLEX-1064141421', 'QSFP+-*', 'speed:100GBASE-CR2']
+        # TODO: Ensure that error message was logged
+
+    @patch('xcvrd.xcvrd.g_dict', media_settings_dict)
+    @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
+    @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
+    @patch('xcvrd.xcvrd.XcvrTableHelper.get_cfg_port_tbl', MagicMock())
+    @patch('xcvrd.xcvrd.get_media_settings_key', MagicMock(return_value=['MOLEX-1064141421', 'QSFP+-10GBase-SR-255M', 'speed:100GBASE-CR2']))
+    @patch('xcvrd.xcvrd.get_speed_and_lane_count', MagicMock(return_value=(100000, 2)))
+    def test_notify_media_setting(self):
+        self._check_notify_media_setting(1)
+
+    @patch('xcvrd.xcvrd.g_dict', media_settings_with_comma_dict)
+    @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
+    @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
+    @patch('xcvrd.xcvrd.XcvrTableHelper.get_cfg_port_tbl', MagicMock())
+    @patch('xcvrd.xcvrd.get_media_settings_key', MagicMock(return_value=['MOLEX-1064141421', 'QSFP+-10GBase-SR-255M', 'speed:100GBASE-CR2']))
+    @patch('xcvrd.xcvrd.get_speed_and_lane_count', MagicMock(return_value=(100000, 2)))
+    def test_notify_media_setting_with_comma(self):
+        self._check_notify_media_setting(1)
+        self._check_notify_media_setting(6)
+
+    def _check_notify_media_setting(self, index):
+        xcvr_table_helper = XcvrTableHelper(DEFAULT_NAMESPACE)
+        cfg_port_tbl = MagicMock()
+        mock_cfg_table = xcvr_table_helper.get_cfg_port_tbl = MagicMock(return_value=cfg_port_tbl)
+
+        logical_port_name = 'Ethernet0'
+        xcvr_info_dict = {
+            index: {
+                'manufacturer': 'Molex',
+                'model': '1064141421',
+                'cable_type': 'Length Cable Assembly(m)',
+                'cable_length': '255',
+                'specification_compliance': "{'10/40G Ethernet Compliance Code': '10GBase-SR'}",
+                'type_abbrv_name': 'QSFP+'
+            }
+        }
+        app_port_tbl = Table("APPL_DB", 'PORT_TABLE')
+        port_mapping = PortMapping()
+        port_change_event = PortChangeEvent('Ethernet0', index, 0, PortChangeEvent.PORT_ADD)
+        port_mapping.handle_port_change_event(port_change_event)
+        notify_media_setting(logical_port_name, xcvr_info_dict, app_port_tbl, mock_cfg_table, port_mapping)
 
     @patch('xcvrd.xcvrd_utilities.optics_si_parser.g_optics_si_dict', optics_si_settings_dict)
     @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
@@ -1166,38 +1198,39 @@ class TestXcvrdScript(object):
         task.join()
         assert wait_until(5, 1, lambda: task.is_alive() is False)
 
-    # @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
-    # @patch('xcvrd.xcvrd.post_port_sfp_info_to_db')
-    # def test_SfpStateUpdateTask_retry_eeprom_reading(self, mock_post_sfp_info):
-    #     mock_table = MagicMock()
-    #     mock_table.get = MagicMock(return_value=(False, None))
+    @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
+    @patch('xcvrd.xcvrd.post_port_sfp_info_to_db')
+    @patch('xcvrd.xcvrd.XcvrTableHelper.get_cfg_port_tbl', MagicMock())
+    def test_SfpStateUpdateTask_retry_eeprom_reading(self, mock_post_sfp_info):
+        mock_table = MagicMock()
+        mock_table.get = MagicMock(return_value=(False, None))
 
-    #     port_mapping = PortMapping()
-    #     stop_event = threading.Event()
-    #     sfp_error_event = threading.Event()
-    #     task = SfpStateUpdateTask(DEFAULT_NAMESPACE, port_mapping, stop_event, sfp_error_event)
-    #     task.xcvr_table_helper = XcvrTableHelper(DEFAULT_NAMESPACE)
-    #     task.xcvr_table_helper.get_intf_tbl = MagicMock(return_value=mock_table)
-    #     task.xcvr_table_helper.get_dom_threshold_tbl = MagicMock(return_value=mock_table)
-    #     task.xcvr_table_helper.get_app_port_tbl = MagicMock(return_value=mock_table)
-    #     task.xcvr_table_helper.get_status_tbl = MagicMock(return_value=mock_table)
-    #     task.retry_eeprom_reading()
-    #     assert mock_post_sfp_info.call_count == 0
+        port_mapping = PortMapping()
+        stop_event = threading.Event()
+        sfp_error_event = threading.Event()
+        task = SfpStateUpdateTask(DEFAULT_NAMESPACE, port_mapping, stop_event, sfp_error_event)
+        task.xcvr_table_helper = XcvrTableHelper(DEFAULT_NAMESPACE)
+        task.xcvr_table_helper.get_intf_tbl = MagicMock(return_value=mock_table)
+        task.xcvr_table_helper.get_dom_threshold_tbl = MagicMock(return_value=mock_table)
+        task.xcvr_table_helper.get_app_port_tbl = MagicMock(return_value=mock_table)
+        task.xcvr_table_helper.get_status_tbl = MagicMock(return_value=mock_table)
+        task.retry_eeprom_reading()
+        assert mock_post_sfp_info.call_count == 0
 
-    #     task.retry_eeprom_set.add('Ethernet0')
-    #     task.last_retry_eeprom_time = time.time()
-    #     task.retry_eeprom_reading()
-    #     assert mock_post_sfp_info.call_count == 0
+        task.retry_eeprom_set.add('Ethernet0')
+        task.last_retry_eeprom_time = time.time()
+        task.retry_eeprom_reading()
+        assert mock_post_sfp_info.call_count == 0
 
-    #     task.last_retry_eeprom_time = 0
-    #     mock_post_sfp_info.return_value = SFP_EEPROM_NOT_READY
-    #     task.retry_eeprom_reading()
-    #     assert 'Ethernet0' in task.retry_eeprom_set
+        task.last_retry_eeprom_time = 0
+        mock_post_sfp_info.return_value = SFP_EEPROM_NOT_READY
+        task.retry_eeprom_reading()
+        assert 'Ethernet0' in task.retry_eeprom_set
 
-    #     task.last_retry_eeprom_time = 0
-    #     mock_post_sfp_info.return_value = None
-    #     task.retry_eeprom_reading()
-    #     assert 'Ethernet0' not in task.retry_eeprom_set
+        task.last_retry_eeprom_time = 0
+        mock_post_sfp_info.return_value = None
+        task.retry_eeprom_reading()
+        assert 'Ethernet0' not in task.retry_eeprom_set
 
     def test_SfpStateUpdateTask_mapping_event_from_change_event(self):
         port_mapping = PortMapping()
