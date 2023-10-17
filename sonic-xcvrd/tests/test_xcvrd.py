@@ -1,6 +1,7 @@
 #from unittest.mock import DEFAULT
 from xcvrd.xcvrd_utilities.port_mapping import *
 from xcvrd.xcvrd_utilities.sfp_status_helper import *
+from xcvrd.xcvrd_utilities.media_settings_parser import *
 from xcvrd.xcvrd_utilities.optics_si_parser import *
 from xcvrd.xcvrd import *
 import pytest
@@ -461,21 +462,21 @@ class TestXcvrdScript(object):
         }
 
         # Test a good 'specification_compliance' value
-        result = get_media_settings_key(0, xcvr_info_dict, 100000, 2)
-        assert result == ('MOLEX-1064141421', 'QSFP+-10GBase-SR-255M', 'speed:100GBASE-CR2')
+        result = media_settings_parser.get_media_settings_key(0, xcvr_info_dict, 100000, 2)
+        assert result == { 'vendor_key': 'MOLEX-1064141421', 'media_key': 'QSFP+-10GBase-SR-255M', 'lane_speed_key': 'speed:100GBASE-CR2' }
 
         # Test a bad 'specification_compliance' value
         xcvr_info_dict[0]['specification_compliance'] = 'N/A'
-        result = get_media_settings_key(0, xcvr_info_dict, 100000, 2)
-        assert result == ('MOLEX-1064141421', 'QSFP+-*', 'speed:100GBASE-CR2')
+        result = media_settings_parser.get_media_settings_key(0, xcvr_info_dict, 100000, 2)
+        assert result == { 'vendor_key': 'MOLEX-1064141421', 'media_key': 'QSFP+-*', 'lane_speed_key': 'speed:100GBASE-CR2' }
         # TODO: Ensure that error message was logged
 
     @patch('xcvrd.xcvrd.g_dict', media_settings_dict)
     @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
     @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
     @patch('xcvrd.xcvrd.XcvrTableHelper.get_cfg_port_tbl', MagicMock())
-    @patch('xcvrd.xcvrd.get_media_settings_key', MagicMock(return_value=('MOLEX-1064141421', 'QSFP+-10GBase-SR-255M', 'speed:100GBASE-CR2')))
-    @patch('xcvrd.xcvrd.get_speed_and_lane_count', MagicMock(return_value=(100000, 2)))
+    @patch('xcvrd.xcvrd_utilities.media_settings_parser.get_media_settings_key', MagicMock(return_value={ 'vendor_key': 'MOLEX-1064141421', 'media_key': 'QSFP+-10GBase-SR-255M', 'lane_speed_key': 'speed:100GBASE-CR2' }))
+    @patch('xcvrd.xcvrd_utilities.media_settings_parser.get_speed_and_lane_count', MagicMock(return_value=(100000, 2)))
     def test_notify_media_setting(self):
         self._check_notify_media_setting(1)
 
@@ -483,8 +484,8 @@ class TestXcvrdScript(object):
     @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
     @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
     @patch('xcvrd.xcvrd.XcvrTableHelper.get_cfg_port_tbl', MagicMock())
-    @patch('xcvrd.xcvrd.get_media_settings_key', MagicMock(return_value=('MOLEX-1064141421', 'QSFP+-10GBase-SR-255M', 'speed:100GBASE-CR2')))
-    @patch('xcvrd.xcvrd.get_speed_and_lane_count', MagicMock(return_value=(100000, 2)))
+    @patch('xcvrd.xcvrd_utilities.media_settings_parser.get_media_settings_key', MagicMock(return_value={ 'vendor_key': 'MOLEX-1064141421', 'media_key': 'QSFP+-10GBase-SR-255M', 'lane_speed_key': 'speed:100GBASE-CR2' }))
+    @patch('xcvrd.xcvrd_utilities.media_settings_parser.get_speed_and_lane_count', MagicMock(return_value=(100000, 2)))
     def test_notify_media_setting_with_comma(self):
         self._check_notify_media_setting(1)
         self._check_notify_media_setting(6)
@@ -509,7 +510,7 @@ class TestXcvrdScript(object):
         port_mapping = PortMapping()
         port_change_event = PortChangeEvent('Ethernet0', index, 0, PortChangeEvent.PORT_ADD)
         port_mapping.handle_port_change_event(port_change_event)
-        notify_media_setting(logical_port_name, xcvr_info_dict, app_port_tbl, mock_cfg_table, port_mapping)
+        media_settings_parser.notify_media_setting(logical_port_name, xcvr_info_dict, app_port_tbl, mock_cfg_table, port_mapping)
 
     @patch('xcvrd.xcvrd_utilities.optics_si_parser.g_optics_si_dict', optics_si_settings_dict)
     @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
@@ -792,6 +793,7 @@ class TestXcvrdScript(object):
 
         assert task.is_cmis_application_update_required(mock_xcvr_api, app_new, host_lanes_mask) == expected
 
+
     @patch('xcvrd.xcvrd.is_cmis_api', MagicMock(return_value=True))
     @pytest.mark.parametrize("host_lane_count, speed, subport, expected", [
         (8, 400000, 0, 0xFF),
@@ -838,6 +840,7 @@ class TestXcvrdScript(object):
 
         appl = get_cmis_application_desired(mock_xcvr_api, host_lane_count, speed)
         assert task.get_cmis_host_lanes_mask(mock_xcvr_api, appl, host_lane_count, subport) == expected
+
 
     def test_CmisManagerTask_post_port_active_apsel_to_db(self):
         mock_xcvr_api = MagicMock()
@@ -921,6 +924,7 @@ class TestXcvrdScript(object):
         host_lanes_mask = 0xf
         ret = task.post_port_active_apsel_to_db(mock_xcvr_api, lport, host_lanes_mask)
         assert int_tbl.getKeys() == []
+
 
     @patch('xcvrd.xcvrd.platform_chassis')
     @patch('xcvrd.xcvrd_utilities.port_mapping.subscribe_port_update_event', MagicMock(return_value=(None, None)))
@@ -1263,7 +1267,7 @@ class TestXcvrdScript(object):
     @patch('xcvrd.xcvrd.SfpStateUpdateTask._mapping_event_from_change_event')
     @patch('xcvrd.xcvrd._wrapper_get_transceiver_change_event')
     @patch('xcvrd.xcvrd.del_port_sfp_dom_info_from_db')
-    @patch('xcvrd.xcvrd.notify_media_setting')
+    @patch('xcvrd.xcvrd_utilities.media_settings_parser.notify_media_setting')
     @patch('xcvrd.xcvrd.post_port_dom_threshold_info_to_db')
     @patch('xcvrd.xcvrd.post_port_sfp_info_to_db')
     @patch('xcvrd.xcvrd.update_port_transceiver_status_table_sw')
@@ -1357,83 +1361,83 @@ class TestXcvrdScript(object):
         assert mock_del_dom.call_count == 1
         assert mock_del_status_hw.call_count == 1
 
-    # @patch('xcvrd.xcvrd.XcvrTableHelper')
-    # @patch('xcvrd.xcvrd._wrapper_get_presence')
-    # @patch('xcvrd.xcvrd.notify_media_setting')
-    # @patch('xcvrd.xcvrd.post_port_dom_threshold_info_to_db')
-    # @patch('xcvrd.xcvrd.post_port_sfp_info_to_db')
-    # @patch('xcvrd.xcvrd.update_port_transceiver_status_table_sw')
-    # def test_SfpStateUpdateTask_on_add_logical_port(self, mock_update_status, mock_post_sfp_info,
-    #         mock_post_dom_th, mock_update_media_setting, mock_get_presence, mock_table_helper):
-    #     class MockTable:
-    #         pass
+    @patch('xcvrd.xcvrd.XcvrTableHelper')
+    @patch('xcvrd.xcvrd._wrapper_get_presence')
+    @patch('xcvrd.xcvrd_utilities.media_settings_parser.notify_media_setting')
+    @patch('xcvrd.xcvrd.post_port_dom_threshold_info_to_db')
+    @patch('xcvrd.xcvrd.post_port_sfp_info_to_db')
+    @patch('xcvrd.xcvrd.update_port_transceiver_status_table_sw')
+    def test_SfpStateUpdateTask_on_add_logical_port(self, mock_update_status, mock_post_sfp_info,
+            mock_post_dom_th, mock_update_media_setting, mock_get_presence, mock_table_helper):
+        class MockTable:
+            pass
 
-    #     status_tbl = MockTable()
-    #     status_tbl.get = MagicMock(return_value=(True, (('status', SFP_STATUS_INSERTED),)))
-    #     status_tbl.set = MagicMock()
-    #     int_tbl = MockTable()
-    #     int_tbl.get = MagicMock(return_value=(True, (('key2', 'value2'),)))
-    #     int_tbl.set = MagicMock()
-    #     dom_threshold_tbl = MockTable()
-    #     dom_threshold_tbl.get = MagicMock(return_value=(True, (('key4', 'value4'),)))
-    #     dom_threshold_tbl.set = MagicMock()
-    #     mock_table_helper.get_status_tbl = MagicMock(return_value=status_tbl)
-    #     mock_table_helper.get_intf_tbl = MagicMock(return_value=int_tbl)
-    #     mock_table_helper.get_dom_threshold_tbl = MagicMock(return_value=dom_threshold_tbl)
+        status_tbl = MockTable()
+        status_tbl.get = MagicMock(return_value=(True, (('status', SFP_STATUS_INSERTED),)))
+        status_tbl.set = MagicMock()
+        int_tbl = MockTable()
+        int_tbl.get = MagicMock(return_value=(True, (('key2', 'value2'),)))
+        int_tbl.set = MagicMock()
+        dom_threshold_tbl = MockTable()
+        dom_threshold_tbl.get = MagicMock(return_value=(True, (('key4', 'value4'),)))
+        dom_threshold_tbl.set = MagicMock()
+        mock_table_helper.get_status_tbl = MagicMock(return_value=status_tbl)
+        mock_table_helper.get_intf_tbl = MagicMock(return_value=int_tbl)
+        mock_table_helper.get_dom_threshold_tbl = MagicMock(return_value=dom_threshold_tbl)
 
-    #     port_mapping = PortMapping()
-    #     stop_event = threading.Event()
-    #     sfp_error_event = threading.Event()
-    #     task = SfpStateUpdateTask(DEFAULT_NAMESPACE, port_mapping, stop_event, sfp_error_event)
-    #     task.xcvr_table_helper = XcvrTableHelper(DEFAULT_NAMESPACE)
-    #     task.xcvr_table_helper.get_status_tbl = mock_table_helper.get_status_tbl
-    #     task.xcvr_table_helper.get_intf_tbl = mock_table_helper.get_intf_tbl
-    #     task.xcvr_table_helper.get_dom_threshold_tbl = mock_table_helper.get_dom_threshold_tbl
-    #     port_change_event = PortChangeEvent('Ethernet0', 1, 0, PortChangeEvent.PORT_ADD)
-    #     task.port_mapping.handle_port_change_event(port_change_event)
+        port_mapping = PortMapping()
+        stop_event = threading.Event()
+        sfp_error_event = threading.Event()
+        task = SfpStateUpdateTask(DEFAULT_NAMESPACE, port_mapping, stop_event, sfp_error_event)
+        task.xcvr_table_helper = XcvrTableHelper(DEFAULT_NAMESPACE)
+        task.xcvr_table_helper.get_status_tbl = mock_table_helper.get_status_tbl
+        task.xcvr_table_helper.get_intf_tbl = mock_table_helper.get_intf_tbl
+        task.xcvr_table_helper.get_dom_threshold_tbl = mock_table_helper.get_dom_threshold_tbl
+        port_change_event = PortChangeEvent('Ethernet0', 1, 0, PortChangeEvent.PORT_ADD)
+        task.port_mapping.handle_port_change_event(port_change_event)
 
-    #     status_tbl.get.return_value = (False, ())
-    #     mock_get_presence.return_value = True
-    #     mock_post_sfp_info.return_value = SFP_EEPROM_NOT_READY
-    #     # SFP information is not in the DB, and SFP is present, and SFP has no error, but SFP EEPROM reading failed
-    #     task.on_add_logical_port(port_change_event)
-    #     assert mock_update_status.call_count == 1
-    #     mock_update_status.assert_called_with('Ethernet0', status_tbl, SFP_STATUS_INSERTED, 'N/A')
-    #     assert mock_post_sfp_info.call_count == 1
-    #     mock_post_sfp_info.assert_called_with('Ethernet0', task.port_mapping, int_tbl, {})
-    #     assert mock_post_dom_th.call_count == 0
-    #     assert mock_update_media_setting.call_count == 0
-    #     assert 'Ethernet0' in task.retry_eeprom_set
-    #     task.retry_eeprom_set.clear()
+        status_tbl.get.return_value = (False, ())
+        mock_get_presence.return_value = True
+        mock_post_sfp_info.return_value = SFP_EEPROM_NOT_READY
+        # SFP information is not in the DB, and SFP is present, and SFP has no error, but SFP EEPROM reading failed
+        task.on_add_logical_port(port_change_event)
+        assert mock_update_status.call_count == 1
+        mock_update_status.assert_called_with('Ethernet0', status_tbl, SFP_STATUS_INSERTED, 'N/A')
+        assert mock_post_sfp_info.call_count == 1
+        mock_post_sfp_info.assert_called_with('Ethernet0', task.port_mapping, int_tbl, {})
+        assert mock_post_dom_th.call_count == 0
+        assert mock_update_media_setting.call_count == 0
+        assert 'Ethernet0' in task.retry_eeprom_set
+        task.retry_eeprom_set.clear()
 
-    #     mock_post_sfp_info.return_value = None
-    #     mock_update_status.reset_mock()
-    #     mock_post_sfp_info.reset_mock()
-    #     # SFP information is not in the DB, and SFP is present, and SFP has no error, and SFP EEPROM reading succeed
-    #     task.on_add_logical_port(port_change_event)
-    #     assert mock_update_status.call_count == 1
-    #     mock_update_status.assert_called_with('Ethernet0', status_tbl, SFP_STATUS_INSERTED, 'N/A')
-    #     assert mock_post_sfp_info.call_count == 1
-    #     mock_post_sfp_info.assert_called_with('Ethernet0', task.port_mapping, int_tbl, {})
-    #     assert mock_post_dom_th.call_count == 1
-    #     mock_post_dom_th.assert_called_with('Ethernet0', task.port_mapping, dom_threshold_tbl)
-    #     assert mock_update_media_setting.call_count == 1
-    #     assert 'Ethernet0' not in task.retry_eeprom_set
+        mock_post_sfp_info.return_value = None
+        mock_update_status.reset_mock()
+        mock_post_sfp_info.reset_mock()
+        # SFP information is not in the DB, and SFP is present, and SFP has no error, and SFP EEPROM reading succeed
+        task.on_add_logical_port(port_change_event)
+        assert mock_update_status.call_count == 1
+        mock_update_status.assert_called_with('Ethernet0', status_tbl, SFP_STATUS_INSERTED, 'N/A')
+        assert mock_post_sfp_info.call_count == 1
+        mock_post_sfp_info.assert_called_with('Ethernet0', task.port_mapping, int_tbl, {})
+        assert mock_post_dom_th.call_count == 1
+        mock_post_dom_th.assert_called_with('Ethernet0', task.port_mapping, dom_threshold_tbl)
+        assert mock_update_media_setting.call_count == 1
+        assert 'Ethernet0' not in task.retry_eeprom_set
 
-    #     mock_get_presence.return_value = False
-    #     mock_update_status.reset_mock()
-    #     # SFP information is not in DB and SFP is not present
-    #     task.on_add_logical_port(port_change_event)
-    #     assert mock_update_status.call_count == 1
-    #     mock_update_status.assert_called_with('Ethernet0', status_tbl, SFP_STATUS_REMOVED, 'N/A')
+        mock_get_presence.return_value = False
+        mock_update_status.reset_mock()
+        # SFP information is not in DB and SFP is not present
+        task.on_add_logical_port(port_change_event)
+        assert mock_update_status.call_count == 1
+        mock_update_status.assert_called_with('Ethernet0', status_tbl, SFP_STATUS_REMOVED, 'N/A')
 
-    #     task.sfp_error_dict[1] = (str(SfpBase.SFP_ERROR_BIT_BLOCKING | SfpBase.SFP_ERROR_BIT_POWER_BUDGET_EXCEEDED), {})
-    #     mock_update_status.reset_mock()
-    #     # SFP information is not in DB, and SFP is not present, and SFP is in error status
-    #     task.on_add_logical_port(port_change_event)
-    #     assert mock_update_status.call_count == 1
-    #     mock_update_status.assert_called_with(
-    #         'Ethernet0', status_tbl, task.sfp_error_dict[1][0], 'Blocking EEPROM from being read|Power budget exceeded')
+        task.sfp_error_dict[1] = (str(SfpBase.SFP_ERROR_BIT_BLOCKING | SfpBase.SFP_ERROR_BIT_POWER_BUDGET_EXCEEDED), {})
+        mock_update_status.reset_mock()
+        # SFP information is not in DB, and SFP is not present, and SFP is in error status
+        task.on_add_logical_port(port_change_event)
+        assert mock_update_status.call_count == 1
+        mock_update_status.assert_called_with(
+            'Ethernet0', status_tbl, task.sfp_error_dict[1][0], 'Blocking EEPROM from being read|Power budget exceeded')
 
     def test_sfp_insert_events(self):
         from xcvrd.xcvrd import _wrapper_soak_sfp_insert_event
@@ -1632,7 +1636,7 @@ class TestXcvrdScript(object):
 
     def test_get_media_val_str_from_dict(self):
         media_dict = {'lane0': '1', 'lane1': '2'}
-        media_str = get_media_val_str_from_dict(media_dict)
+        media_str = media_settings_parser.get_media_val_str_from_dict(media_dict)
         assert media_str == '1,2'
 
     def test_get_media_val_str(self):
