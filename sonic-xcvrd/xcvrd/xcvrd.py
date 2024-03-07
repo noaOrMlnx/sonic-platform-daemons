@@ -26,11 +26,13 @@ try:
     from swsscommon import swsscommon
 
     from .xcvrd_utilities import sfp_status_helper
+    from .sff_mgr import SffManagerTask
+    from .xcvrd_utilities.xcvr_table_helper import XcvrTableHelper
     from .xcvrd_utilities import port_event_helper
     from .xcvrd_utilities.port_event_helper import PortChangeObserver
     from .xcvrd_utilities import media_settings_parser
     from .xcvrd_utilities import optics_si_parser
-    
+
     from sonic_platform_base.sonic_xcvr.api.public.c_cmis import CmisApi
 
 except ImportError as e:
@@ -44,12 +46,6 @@ SYSLOG_IDENTIFIER = "xcvrd"
 
 PLATFORM_SPECIFIC_MODULE_NAME = "sfputil"
 PLATFORM_SPECIFIC_CLASS_NAME = "SfpUtil"
-
-TRANSCEIVER_INFO_TABLE = 'TRANSCEIVER_INFO'
-TRANSCEIVER_DOM_SENSOR_TABLE = 'TRANSCEIVER_DOM_SENSOR'
-TRANSCEIVER_DOM_THRESHOLD_TABLE = 'TRANSCEIVER_DOM_THRESHOLD'
-TRANSCEIVER_STATUS_TABLE = 'TRANSCEIVER_STATUS'
-TRANSCEIVER_PM_TABLE = 'TRANSCEIVER_PM'
 
 TRANSCEIVER_STATUS_TABLE_SW_FIELDS = ["status", "error"]
 
@@ -898,7 +894,7 @@ class CmisManagerTask(threading.Thread):
             self.log_error("Invalid input to get media lane mask - appl {} media_lane_count {} "
                             "lport {} subport {}!".format(appl, media_lane_count, lport, subport))
             return media_lanes_mask
-	
+
         media_lane_start_bit = (media_lane_count * (0 if subport == 0 else subport - 1))
         if media_lane_assignment_option & (1 << media_lane_start_bit):
             media_lanes_mask = ((1 << media_lane_count) - 1) << media_lane_start_bit
@@ -1322,7 +1318,7 @@ class CmisManagerTask(threading.Thread):
                             continue
                         host_lanes_mask = self.port_dict[lport]['host_lanes_mask']
                         self.log_notice("{}: Setting host_lanemask=0x{:x}".format(lport, host_lanes_mask))
-			
+
                         self.port_dict[lport]['media_lane_count'] = int(api.get_media_lane_count(appl))
                         self.port_dict[lport]['media_lane_assignment_options'] = int(api.get_media_lane_assignment_option(appl))
                         media_lane_count = self.port_dict[lport]['media_lane_count']
@@ -1392,8 +1388,8 @@ class CmisManagerTask(threading.Thread):
                         self.port_dict[lport]['cmis_expired'] = now + datetime.timedelta(seconds = max(modulePwrUpDuration, dpDeinitDuration))
 
                     elif state == self.CMIS_STATE_AP_CONF:
-                        # Explicit control bit to apply custom Host SI settings. 
-                        # It will be set to 1 and applied via set_application if 
+                        # Explicit control bit to apply custom Host SI settings.
+                        # It will be set to 1 and applied via set_application if
                         # custom SI settings is applicable
                         ec = 0
 
@@ -1425,13 +1421,13 @@ class CmisManagerTask(threading.Thread):
                             # Apply module SI settings if applicable
                             lane_speed = int(speed/1000)//host_lane_count
                             optics_si_dict = optics_si_parser.fetch_optics_si_setting(pport, lane_speed, sfp)
-                            
+
                             self.log_debug("Read SI parameters for port {} from optics_si_settings.json vendor file:".format(lport))
                             for key, sub_dict in optics_si_dict.items():
                                 self.log_debug("{}".format(key))
                                 for sub_key, value in sub_dict.items():
                                     self.log_debug("{}: {}".format(sub_key, str(value)))
-                            
+
                             if optics_si_dict:
                                 self.log_notice("{}: Apply Optics SI found for Vendor: {}  PN: {} lane speed: {}G".
                                                  format(lport, api.get_manufacturer(), api.get_model(), lane_speed))
@@ -2185,11 +2181,12 @@ class SfpStateUpdateTask(threading.Thread):
 
 
 class DaemonXcvrd(daemon_base.DaemonBase):
-    def __init__(self, log_identifier, skip_cmis_mgr=False):
+    def __init__(self, log_identifier, skip_cmis_mgr=False, enable_sff_mgr=False):
         super(DaemonXcvrd, self).__init__(log_identifier)
         self.stop_event = threading.Event()
         self.sfp_error_event = threading.Event()
         self.skip_cmis_mgr = skip_cmis_mgr
+        self.enable_sff_mgr = enable_sff_mgr
         self.namespaces = ['']
         self.threads = []
 
@@ -2316,6 +2313,15 @@ class DaemonXcvrd(daemon_base.DaemonBase):
         # Start daemon initialization sequence
         port_mapping_data = self.init()
 
+        # Start the SFF manager
+        sff_manager = None
+        if self.enable_sff_mgr:
+            sff_manager = SffManagerTask(self.namespaces, self.stop_event, platform_chassis, helper_logger)
+            sff_manager.start()
+            self.threads.append(sff_manager)
+        else:
+            self.log_notice("Skipping SFF Task Manager")
+
         # Start the CMIS manager
         cmis_manager = CmisManagerTask(self.namespaces, port_mapping_data, self.stop_event, self.skip_cmis_mgr)
         if not self.skip_cmis_mgr:
@@ -2355,6 +2361,11 @@ class DaemonXcvrd(daemon_base.DaemonBase):
             self.log_error("Exiting main loop as child thread raised exception!")
             os.kill(os.getpid(), signal.SIGKILL)
 
+        # Stop the SFF manager
+        if sff_manager is not None:
+            if sff_manager.is_alive():
+                sff_manager.join()
+
         # Stop the CMIS manager
         if cmis_manager is not None:
             if cmis_manager.is_alive():
@@ -2377,54 +2388,6 @@ class DaemonXcvrd(daemon_base.DaemonBase):
         if self.sfp_error_event.is_set():
             sys.exit(SFP_SYSTEM_ERROR)
 
-
-class XcvrTableHelper:
-    def __init__(self, namespaces):
-        self.int_tbl, self.dom_tbl, self.dom_threshold_tbl, self.status_tbl, self.app_port_tbl, \
-		self.cfg_port_tbl, self.state_port_tbl, self.pm_tbl = {}, {}, {}, {}, {}, {}, {}, {}
-        self.state_db = {}
-        self.cfg_db = {}
-        for namespace in namespaces:
-            asic_id = multi_asic.get_asic_index_from_namespace(namespace)
-            self.state_db[asic_id] = daemon_base.db_connect("STATE_DB", namespace)
-            self.int_tbl[asic_id] = swsscommon.Table(self.state_db[asic_id], TRANSCEIVER_INFO_TABLE)
-            self.dom_tbl[asic_id] = swsscommon.Table(self.state_db[asic_id], TRANSCEIVER_DOM_SENSOR_TABLE)
-            self.dom_threshold_tbl[asic_id] = swsscommon.Table(self.state_db[asic_id], TRANSCEIVER_DOM_THRESHOLD_TABLE)
-            self.status_tbl[asic_id] = swsscommon.Table(self.state_db[asic_id], TRANSCEIVER_STATUS_TABLE)
-            self.pm_tbl[asic_id] = swsscommon.Table(self.state_db[asic_id], TRANSCEIVER_PM_TABLE)
-            self.state_port_tbl[asic_id] = swsscommon.Table(self.state_db[asic_id], swsscommon.STATE_PORT_TABLE_NAME)
-            appl_db = daemon_base.db_connect("APPL_DB", namespace)
-            self.app_port_tbl[asic_id] = swsscommon.ProducerStateTable(appl_db, swsscommon.APP_PORT_TABLE_NAME)
-            self.cfg_db[asic_id] = daemon_base.db_connect("CONFIG_DB", namespace)
-            self.cfg_port_tbl[asic_id] = swsscommon.Table(self.cfg_db[asic_id], swsscommon.CFG_PORT_TABLE_NAME)
-
-    def get_intf_tbl(self, asic_id):
-        return self.int_tbl[asic_id]
-
-    def get_dom_tbl(self, asic_id):
-        return self.dom_tbl[asic_id]
-
-    def get_dom_threshold_tbl(self, asic_id):
-        return self.dom_threshold_tbl[asic_id]
-
-    def get_status_tbl(self, asic_id):
-        return self.status_tbl[asic_id]
-
-    def get_pm_tbl(self, asic_id):
-        return self.pm_tbl[asic_id]
-
-    def get_app_port_tbl(self, asic_id):
-        return self.app_port_tbl[asic_id]
-
-    def get_state_db(self, asic_id):
-        return self.state_db[asic_id]
-
-    def get_cfg_port_tbl(self, asic_id):
-        return self.cfg_port_tbl[asic_id]
-
-    def get_state_port_tbl(self, asic_id):
-        return self.state_port_tbl[asic_id]
-
 #
 # Main =========================================================================
 #
@@ -2435,9 +2398,10 @@ class XcvrTableHelper:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--skip_cmis_mgr', action='store_true')
+    parser.add_argument('--enable_sff_mgr', action='store_true')
 
     args = parser.parse_args()
-    xcvrd = DaemonXcvrd(SYSLOG_IDENTIFIER, args.skip_cmis_mgr)
+    xcvrd = DaemonXcvrd(SYSLOG_IDENTIFIER, args.skip_cmis_mgr, args.enable_sff_mgr)
     xcvrd.run()
 
 
