@@ -985,7 +985,7 @@ class CmisManagerTask(threading.Thread):
 
     def is_appl_reconfigure_required(self, api, app_new):
         """
-	   Reset app code if non default app code needs to configured 
+	   Reset app code if non default app code needs to configured
         """
         for lane in range(self.CMIS_MAX_HOST_LANES):
             app_cur = api.get_application(lane)
@@ -1394,6 +1394,7 @@ class CmisManagerTask(threading.Thread):
                 try:
                     # CMIS state transitions
                     if state == CMIS_STATE_INSERTED:
+                        api.apply_app0()
                         self.port_dict[lport]['appl'] = get_cmis_application_desired(api, host_lane_count, host_speed)
                         if self.port_dict[lport]['appl'] is None:
                             self.log_error("{}: no suitable app for the port appl {} host_lane_count {} "
