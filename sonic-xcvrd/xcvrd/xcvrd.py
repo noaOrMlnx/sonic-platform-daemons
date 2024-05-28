@@ -1474,6 +1474,10 @@ class CmisManagerTask(threading.Thread):
                         # D.2.2 Software Deinitialization
                         api.set_datapath_deinit(host_lanes_mask)
 
+                        self.log_info("Applying App0 configuration for port {}".format(lport))
+                        if not api.apply_app0_configuration():
+                            self.log_notice("{}: Could not apply application 0 configurations")
+
                         # D.1.3 Software Configuration and Initialization
                         media_lanes_mask = self.port_dict[lport]['media_lanes_mask']
                         if not api.tx_disable_channel(media_lanes_mask, True):

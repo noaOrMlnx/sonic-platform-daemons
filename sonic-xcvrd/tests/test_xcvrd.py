@@ -1297,6 +1297,7 @@ class TestXcvrdScript(object):
         mock_xcvr_api = MagicMock()
         mock_xcvr_api.set_datapath_deinit = MagicMock(return_value=True)
         mock_xcvr_api.set_datapath_init = MagicMock(return_value=True)
+        mock_xcvr_api.apply_app0_configuration = MagicMock(return_value=True)
         mock_xcvr_api.tx_disable_channel = MagicMock(return_value=True)
         mock_xcvr_api.set_lpmode = MagicMock(return_value=True)
         mock_xcvr_api.set_application = MagicMock(return_value=True)
