@@ -696,6 +696,10 @@ class CmisManagerTask(threading.Thread):
         lport = port_change_event.port_name
         pport = port_change_event.port_index
 
+        if not self.port_mapping.is_logical_port(lport):
+            helper_logger.log_info("lport {} does not exist in CONFIG DB. Ignoring port update event".format(lport))
+            return
+
         if lport in ['PortInitDone']:
             self.isPortInitDone = True
             return
