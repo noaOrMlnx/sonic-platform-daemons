@@ -231,9 +231,10 @@ def get_media_settings_value(physical_port, key):
 
     def get_media_settings(key, media_dict):
         for dict_key in media_dict.keys():
-            if (re.match(dict_key, key[VENDOR_KEY]) or \
-                re.match(dict_key, key[VENDOR_KEY].split('-')[0]) # e.g: 'AMPHENOL-1234'
-                or re.match(dict_key, key[MEDIA_KEY]) ): # e.g: 'QSFP28-40GBASE-CR4-1M'
+            pattern = re.escape(dict_key)
+            if (re.match(pattern, key[VENDOR_KEY]) or \
+                re.match(pattern, key[VENDOR_KEY].split('-')[0]) # e.g: 'AMPHENOL-1234'
+                or re.match(pattern, key[MEDIA_KEY]) ): # e.g: 'QSFP28-40GBASE-CR4-1M'
                 return get_media_settings_for_speed(media_dict[dict_key], key[LANE_SPEED_KEY])
             elif key[MEDIUM_LANE_SPEED_KEY] in media_dict:
                 return media_dict[key[MEDIUM_LANE_SPEED_KEY]]
